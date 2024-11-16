@@ -1,0 +1,410 @@
+---
+title: "Project_2_Lara"
+author: "Jaxon Lara"
+date: "2024-11-12"
+output:
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{css, echo=FALSE}
+.watch-out {
+  background-color: lightgrey;
+  border: 2px solid grey;
+  font-size: 15px;
+  font-weight: bold;
+  text-align: left;
+  }
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Setup
+library(tidyverse)
+library(ggplot2)
+library(stringr)
+library(lubridate)
+library(kableExtra)
+
+#install.packages("imputeTS")
+library("imputeTS")
+
+options(scipen=999)
+```
+
+***
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#functions
+Aggregate_Histogram = function(Variable,Color){
+  
+  Xlab = paste("2020",Variable,"emissions","(Gigatonne co2)")
+  
+  C2_ggplot + geom_histogram(aes_string(x=Variable),binwidth=.2, position='identity',fill=Color) + theme_classic() + labs(x=Xlab,y="Frequency",title=paste("Distribution of",Xlab))
+}
+```
+
+# **1. Introduction**
+
+The dataset subject of analysis contains the yearly CO2 emissions of countries from 1750 to 2021 broken down into its components. The dataset includes the yearly coal, oil, gas, flaring, cement, total, and other CO2 emissions by country and year. The dataset also contains the per capita CO2 emissions. The original source is [Quantifying Sources and Emission Levels](https://zenodo.org/records/7215364) which organized data gathered from the [Global Carbon Project](https://www.globalcarbonproject.org/). I chose this dataset because it contained specifics on where emissions are estimated to have come from and every year since the start of the industrial revolution in the UK. This is interesting as it allows contributions to climate change to be analyzed on a regional level. I will be analyzing this aspect and specifically how the countries that emit the most CO2 compare to one another.
+![](062819_CW_1.5_feat.webp)
+A gas-fired power plant, ScienceNews, CO2 emissions are on track to take us beyond 1.5 degrees of global warming.
+
+
+ ***
+ 
+# **2. Data Preparation**
+
+I first found this dataset on [Kaggle](https://www.kaggle.com/datasets/thedevastator/global-fossil-co2-emissions-by-country-2002-2022?resource=download) where I downloaded the csv file and imported it into r. The dataset contained a lot of NAs which for this dataset should actually represent 0 for no CO2 emissions, so I replaced all Na values with 0 using the is.na() function and a loop. Then I divided the numeric values to get a cleaner unit for CO2 emissions (gigatonne). I also decided to make another variable called percent of global emissions which required me to use a loop. I used the total global emissions for a given year i and divided each country's total for that year by the global. I also renamed 2 column titles to "Iso" and "Per_Capita" for cleaner column names.
+
+I also made a number of subsets with the cleaned initial dataset that would be more ideal for the separate graphs I make later. During the process there was some difficulty making the new variable percent of global emissions because the new variable depended on another that did not exist and changes throughout the dataset. It was also a little difficult to confirm data points using outside references. For example the initial dataset numeric values were in million metric tons of CO2 and to create a better unit I had to google a specifc datapoint in the dataset and cross-reference it with the country's population and per capita emissions at the same point. In the end the total number of observations was 63,104.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Climate_General = read_csv("GCB2022v27_MtCO2_flat.csv",show_col_types = FALSE) #Base dataset with no changes
+
+colnames(Climate_General)[2] = "ISO"
+colnames(Climate_General)[11] = "Per_Capita"
+
+for (j in 4:11){
+  for (i in 1:63104){
+    if (is.na(Climate_General[i,j])){
+      Climate_General[i,j]=0
+    }
+  }
+}
+
+Climate_General$Total = Climate_General$Total/1000
+Climate_General$Coal = Climate_General$Coal/1000
+Climate_General$Oil = Climate_General$Oil/1000
+Climate_General$Gas = Climate_General$Gas/1000
+Climate_General$Cement = Climate_General$Cement/1000
+Climate_General$Flaring = Climate_General$Flaring/1000
+Climate_General$Other = Climate_General$Other/1000
+Climate_General$Per_Capita = Climate_General$Per_Capita/1000000000
+#Climate_General is cleaned of NAs and numbers are converted from million metric tons to giga tons co2
+
+Climate_General[Climate_General$Country=="United Kingdom",]$Country = "UK"
+
+Climate_General_Temp = tibble()
+for (i in 1750:2021){
+  Year_Subset = Climate_General[Climate_General$Year==i,]
+  Global_Emissions = Year_Subset[Year_Subset$Country=="Global",]$Total
+  for (j in 1:nrow(Year_Subset)){
+    Year_Subset$Percent_Global_Emissions[j] = Year_Subset$Total[j]/Global_Emissions
+  }
+  Climate_General_Temp = rbind(Year_Subset, Climate_General_Temp)
+}
+
+Climate_General = Climate_General_Temp
+#Added percent of clobal emitions variable
+
+Climate_General$Population = Climate_General$Total/Climate_General$Per_Capita
+#Added population variable but it only shows for years the country is emitting CO2
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Climate_By_Country_Aggregate = aggregate( cbind(Total, Coal, Oil, Gas, Cement, Flaring, Other) ~ Country, data = Climate_General , FUN = sum ) #Aggregate emissions by country omitting ISO, Year, percent global emessions, and per capita emessions
+
+for (i in 1:ncol(Climate_By_Country_Aggregate)){
+  colnames(Climate_By_Country_Aggregate)[i] = paste0("Aggregate_",colnames(Climate_By_Country_Aggregate)[i])
+} #Adding aggregate naming to better describe variables
+
+Climate_By_Country_Aggregate = arrange(Climate_By_Country_Aggregate, -(Climate_By_Country_Aggregate$Aggregate_Total))
+#New dataset Climate_By_Country_Aggregate makes analyzing the sum total of each country's emissions easier
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Climate_By_Country_Aggregate_WOGlobal = Climate_By_Country_Aggregate[Climate_By_Country_Aggregate$Aggregate_Country!="Global",]
+
+Climate_By_Country_Aggregate_WOGlobal = Climate_By_Country_Aggregate_WOGlobal[Climate_By_Country_Aggregate_WOGlobal$Aggregate_Country!="International Transport",]
+
+CBCA_ggplot = ggplot(Climate_By_Country_Aggregate_WOGlobal)
+#Will be used for univariate graphs
+#Omitted multinational variables like global and international transport
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Climate_Top_10_Emissions_Country = Climate_By_Country_Aggregate_WOGlobal[c(1:10),]
+colnames(Climate_Top_10_Emissions_Country)[1] = "Country"
+#Taking just the 10 most polluting countries for bar graphing
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Climate_2020 = Climate_General[Climate_General$Year=="2020",]
+
+Climate_2020 = arrange(Climate_2020, -(Total))
+
+Climate_2020_Global_Total = Climate_2020[Climate_2020$Country=="Global",]$Total
+
+Climate_2020 = Climate_2020[Climate_2020$Country!="Global",]
+
+Climate_2020 = Climate_2020[Climate_2020$Country!="International Transport",]
+
+C2_ggplot = ggplot(Climate_2020)
+#2020 emissions omitting multinational variables for graphing
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Climate_Top_10_Emissions_Country_Today = Climate_2020[c(1:10),]
+#Taking just the 10 most polluting countries 2020 for bar graphing
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Climate_General_USA_China = Climate_General[Climate_General$Country=="China"|Climate_General$Country=="USA",]
+UC_ggplot = ggplot(Climate_General_USA_China)
+#Comparing the United States and China
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Climate_Top_10_Today_PerCap = arrange(Climate_2020, -(Per_Capita))[c(1:10),]
+#Taking just the 10 most polluting countries per capita for bar graphing
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Climate_Global = Climate_General[Climate_General$Country=="Global",]
+CG_ggplot = ggplot(Climate_Global)
+#For looking at global trends
+```
+
+***
+
+# **3. Variable Descriptions**
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Climate_Variables = colnames(Climate_General)
+Climate_Variables = as.data.frame(Climate_Variables)
+colnames(Climate_Variables)[1] = "Variable"
+Climate_Variables$Discription = c(1:13)
+
+Climate_Variables$Discription[1] = "The name of the country. (String)"
+Climate_Variables$Discription[2] = "The three-letter code for the country. (String)"
+Climate_Variables$Discription[3] = "The year of the data. (Integer)"
+Climate_Variables$Discription[4] = "The total amount of CO2 emissions for the country in the given year. (Gigatonne co2)(Numeric)"
+Climate_Variables$Discription[5] = "The amount of CO2 emissions from coal for the country in the given year. (Gigatonne co2)(Numeric)"
+Climate_Variables$Discription[6] = "The amount of CO2 emissions from oil for the country in the given year. (Gigatonne co2)(Numeric)"
+Climate_Variables$Discription[7] = "The amount of CO2 emissions from gas for the country in the given year. (Gigatonne co2)(Numeric)"
+Climate_Variables$Discription[8] = "The amount of CO2 emissions from cement production for the country in the given year. (Gigatonne co2)(Numeric)"
+Climate_Variables$Discription[9] = "The amount of CO2 emissions from flaring operations for the country in the given year. (Gigatonne co2)(Numeric)"
+Climate_Variables$Discription[10] = "The amount of CO2 emissions from other sources for the country in the given year. (Gigatonne co2)(Numeric)"
+Climate_Variables$Discription[11] = "The amount of CO2 emissions per capita for the country in the given year. (Gigatonne co2)(Numeric)"
+Climate_Variables$Discription[12] = "The percent of total global emissions.(Numeric)"
+Climate_Variables$Discription[13] = "The region's population at that time.(Numeric)"
+
+kbl(Climate_Variables) %>% kable_paper(full_width = T, html_font = "Cambria") %>% kable_styling(bootstrap_options = c("striped","hover","condensed","responsive"))
+```
+
+***
+ 
+
+# **4. Univariate Analyses**
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Aggregate_Histogram("Total","skyblue3")
+```
+
+The distribution of total CO2 emitted by countries in 2020 is skewed heavily towards the most polluting countries. With the median CO2 emitted being `r round(median(Climate_2020$Total),2)` gigatonnes while the mean CO2 emitted was `r round(mean(Climate_2020$Total),2)` gigatonnes.
+
+***
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Aggregate_Histogram("Coal","skyblue3")
+```
+
+The distribution of coal CO2 emitted by countries in 2020 is skewed heavily towards the most polluting countries. With the median CO2 emitted being `r round(median(Climate_2020$Coal),2)` gigatonnes while the mean CO2 emitted was `r round(mean(Climate_2020$Coal),2)` gigatonnes.
+
+***
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Aggregate_Histogram("Oil","skyblue3")
+```
+
+The distribution of Oil CO2 emitted by countries in 2020 is skewed heavily towards the most polluting countries. With the median CO2 emitted being `r round(median(Climate_2020$Oil),2)` gigatonnes while the mean CO2 emitted was `r round(mean(Climate_2020$Oil),2)` gigatonnes.
+
+***
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Aggregate_Histogram("Gas","skyblue3")
+```
+
+The distribution of Gas CO2 emitted by countries in 2020 is skewed heavily towards the most polluting countries. With the median CO2 emitted being `r round(median(Climate_2020$Gas),2)` gigatonnes while the mean CO2 emitted was `r round(mean(Climate_2020$Gas),2)` gigatonnes.
+
+***
+
+# **5. Multivariate Analyses**
+
+```{r, echo=FALSE, warning=FALSE}
+CG_ggplot + geom_point(aes(x=Year,y=Total,col=Total),size=Climate_Global$Total,alpha=.5) + theme_classic() + labs(y="Gigatonne c02",title="Global Yearly CO2 Emissions Over Time")
+```
+
+Global emissions of CO2 began in 1750 starting with the UK and began to increase rapidly after 1950. Overall global emissions had a strong positive correlation with Year with an r value of  `r round(cor(Climate_Global$Year,Climate_Global$Total),2)`.
+
+***
+
+```{r, echo=FALSE, warning=FALSE}
+C2_ggplot + geom_point(aes(x=Population,y=Total,col=Per_Capita),size=Climate_2020$Per_Capita/.000000002,alpha=.5) + theme_classic() + labs(y="Gigatonne c02",title="A Country's Population vs. Total CO2 Emissions In 2020")
+```
+
+The correlation coefficient between a country's population and its total CO2 emissions is `r round(cor(Climate_2020$Population,Climate_2020$Total,use="complete.obs"),2)`. This shows that a country's CO2 emissions has a strong positive correlation with its population.
+
+***
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#install.packages("maps")
+library(maps)
+
+World <- map_data("world")
+colnames(World)[5] = "Country"
+colnames(Climate_By_Country_Aggregate)[1] = "Country"
+
+worldSubset <- inner_join(World, Climate_By_Country_Aggregate, by = "Country")
+```
+
+```{r, echo=FALSE}
+WS_ggplot = ggplot(data = worldSubset, mapping = aes(x = long, y = lat, group = group)) + coord_fixed(1.3)
+
+WS_ggplot+ geom_polygon(aes(fill = Aggregate_Total)) + theme_void() + labs(fill="Total Emissions\n(Gigatonnes co2)")
+```
+
+```{r, echo=FALSE, warning=FALSE}
+TTEN_ggplot = ggplot(Climate_Top_10_Emissions_Country, aes(fill=Climate_Top_10_Emissions_Country$Aggregate_Total,x=Climate_Top_10_Emissions_Country$Country,y=Climate_Top_10_Emissions_Country$Aggregate_Total))
+
+TTEN_ggplot + geom_bar(position = "stack", stat = "identity") + theme_classic() + labs(title="Total co2 Emissions For The Top 10 Countries For All Time",y="Gigatonnes co2") + theme(axis.title.x=element_blank()) + theme(axis.text.x=element_text(angle=90,hjust=1)) + labs(fill="Total Emissions\n(Gigatonnes co2)")
+```
+
+The United States has emitted the most CO2 with an estimated `r round(Climate_By_Country_Aggregate[Climate_By_Country_Aggregate$Country=="USA",]$Aggregate_Total,2)` gigatonnes. While the United States and China together emitted a significant portion of the world's CO2 emissions from 1750 to 2021 with the United States and China making up `r round((Climate_By_Country_Aggregate[Climate_By_Country_Aggregate$Country=="USA",]$Aggregate_Total+Climate_By_Country_Aggregate[Climate_By_Country_Aggregate$Country=="China",]$Aggregate_Total)/Climate_By_Country_Aggregate[Climate_By_Country_Aggregate$Country=="Global",]$Aggregate_Total,2)`% of the world's emissions.
+
+***
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+World_Today <- map_data("world")
+colnames(World_Today)[5] = "Country"
+
+worldSubset_Today <- inner_join(World_Today, Climate_2020, by = "Country")
+```
+
+```{r, echo=FALSE}
+WST_ggplot = ggplot(data = worldSubset_Today, mapping = aes(x = long, y = lat, group = group)) + coord_fixed(1.3)
+
+WST_ggplot+ geom_polygon(aes(fill = Total)) + theme_void() + labs(fill="2020 Emissions\n(Gigatonnes co2)")
+```
+
+```{r, echo=FALSE, warning=FALSE}
+TTENT_ggplot = ggplot(Climate_Top_10_Emissions_Country_Today, aes(fill=Climate_Top_10_Emissions_Country_Today$Total,x=Climate_Top_10_Emissions_Country_Today$Country,y=Climate_Top_10_Emissions_Country_Today$Total))
+
+TTENT_ggplot + geom_bar(position = "stack", stat = "identity") + theme_classic() + labs(title="Total co2 Emissions For The Top 10 Countries In 2020",y="Gigatonnes co2") + theme(axis.title.x=element_blank()) + theme(axis.text.x=element_text(angle=90,hjust=1)) + labs(fill="2020 Emissions\n(Gigatonnes co2)")
+```
+
+China emitted the most CO2 out of all countries in 2020 with an estimated `r round(Climate_2020[Climate_2020$Country=="China",]$Total,2)` gigatonnes being emitted. While China and the United States together made up a significant portion of the worlds CO2 emissions in 2020 making up `r round((Climate_2020[Climate_2020$Country=="USA",]$Total+Climate_2020[Climate_2020$Country=="China",]$Total)/Climate_2020_Global_Total,2)`% of the world's emissions in 2020.
+
+***
+
+```{r, echo=FALSE}
+WST_ggplot = ggplot(data = worldSubset_Today, mapping = aes(x = long, y = lat, group = group)) + coord_fixed(1.3)
+
+WST_ggplot+ geom_polygon(aes(fill = Per_Capita)) + theme_void() + labs(fill="2020 Emissions\nPer Capita\n(Gigatonnes co2)")
+```
+
+```{r, echo=FALSE, warning=FALSE}
+TTENT2_ggplot = ggplot(Climate_Top_10_Today_PerCap, aes(fill=Climate_Top_10_Today_PerCap$Per_Capita,x=Climate_Top_10_Today_PerCap$Country,y=Climate_Top_10_Today_PerCap$Per_Capita))
+
+TTENT2_ggplot + geom_bar(position = "stack", stat = "identity") + theme_classic() + labs(title="Per Capita co2 Emissions For The Top 10 Countries In 2020",y="gigatonnes co2") + theme(axis.title.x=element_blank()) + theme(axis.text.x=element_text(angle=90,hjust=1)) + labs(fill="2020 Emissions\nPer Capita\n(Gigatonnes co2)")
+```
+
+Qatar emitted the most CO2 per capita of `r round(Climate_2020[Climate_2020$Country=="Qatar",]$Per_Capita*1000000000,2)` metric tons in 2020, however unlike total emissions the per capita emissions of the top 10 countries were fairly similar.
+
+***
+
+```{r, echo=FALSE, warning=FALSE}
+UC_ggplot + geom_point(aes(x=Year,y=Total,col=Country),size=Climate_General_USA_China$Total/.5,alpha=.5) + theme_classic() + labs(y="Gigatonne CO2",title="USA And China's Total Yearly CO2 Emissions By Year")
+```
+
+Point size indicates total CO2 emissions in the given year.
+
+The United States contributed the largest amount of CO2 emissions with an average of `r round(((Climate_By_Country_Aggregate[Climate_By_Country_Aggregate$Country=="USA",]$Aggregate_Total)/271),2)` gigatonnes yearly from 1750 to 2021. Then China surpassed the United States yearly emissions in 2006 with China's average CO2 emissions growing to `r round(((Climate_By_Country_Aggregate[Climate_By_Country_Aggregate$Country=="China",]$Aggregate_Total)/271),2)` gigatonnes on average yearly from 1750 to 2021. There is also a strong positive correlation between the United States and China's yearly emissions and year with an r value of `r round(cor(Climate_General_USA_China$Year,Climate_General_USA_China$Total),2)`.
+
+***
+
+```{r, echo=FALSE, warning=FALSE}
+UC_ggplot + geom_point(aes(x=Year,y=Percent_Global_Emissions,col=Country),size=Climate_General_USA_China$Total/.5,alpha=.5) + theme_classic() + labs(y="Percent Global Emissions",title="USA And China's Percent Of Global Emissions By Year")
+```
+
+Point size indicates total CO2 emissions in the given year.
+
+The United States' percent of global emissions peaked at `r round(max(Climate_General[Climate_General$Country=="USA",]$Percent_Global_Emissions),2)`% in `r Climate_General$Year[which(Climate_General$Percent_Global_Emissions == max(Climate_General[Climate_General$Country=="USA",]$Percent_Global_Emissions))]`. While in the same year China's percent of global emissions was `r round(Climate_General[Climate_General$Country=="China",][Climate_General[Climate_General$Country=="China",]$Year==Climate_General$Year[which(Climate_General$Percent_Global_Emissions == max(Climate_General[Climate_General$Country=="USA",]$Percent_Global_Emissions))],]$Percent_Global_Emissions,2)`%. There is also a moderate positive correlation between the United States and China's percent of global emissions and year with an r value of `r round(cor(Climate_General_USA_China$Year,Climate_General_USA_China$Percent_Global_Emissions),2)`.
+
+***
+
+```{r, echo=FALSE, warning=FALSE}
+UC_ggplot + geom_point(aes(x=Year,y=Per_Capita,col=Country),size=Climate_General_USA_China$Total/.5,alpha=.5) + theme_classic() + labs(y="Gigatonne CO2",title="USA And China's Emissions Per Capita By Year")
+```
+
+Point size indicates total CO2 emissions in the given year.
+
+The United States emitted an average of `r round((sum(Climate_General[Climate_General$Country=="USA",]$Per_Capita)/271)*1000000000,2)` metric tons of CO2 per capita from 1750 to 2021. While China emitted an average of `r round((sum(Climate_General[Climate_General$Country=="China",]$Per_Capita)/271)*1000000000,2)` metric tons of CO2 per capita from 1750 to 2021. Less than 1/10 of emissions per capita from the United Sates. There is also a moderate positive correlation between the United States and China's per capita emissions and year with an r value of `r round(cor(Climate_General_USA_China$Year,Climate_General_USA_China$Per_Capita),2)`.
+
+
+***
+
+# **6. Reproducibility**
+
+I made a folder for this rmd file, the image file, and the csv which was put into a repo on Github.
+
+ ***
+  
+
+# **7. Choice Elements**
+
+1. Used 5 or more in-line codes in describing statistics for the univariate and bivariate graphs.
+
+2. Created at least 2 new variables (Population, Percent_Global_Emissions) to use in bivariate graphs.
+
+3. Used a loop to process data and replace NA values with 0. Also used loops to create the Percent_Global_emissions variable and to change column names more effieciently.
+
+4. Used an if statement to process data, if(is.na()) to replace NA with 0 and leave actual values.
+
+5. Wrote a user-written function with at least 2 arguments to make the univariate graph code cleaner.
+
+ ***
+  
+
+# **8. Conclusion**
+
+The United States emitted the most CO2 since 1750 which when combined with China's emissions since 1750 make up nearly half of the entire world's emissions. Though recently in 2020 China was emitting the most CO2 when compared to the US, though when accounting for emissions per capita the United States still emits more CO2.
+
+When looking at the CO2 emission timeline starting in 1750 the United States started emitting CO2 nearly 100 years before China, yet China was able to meet and surpass the United States in less than 60. Adding to this the United States contributed the most to global yearly emissions pre 2006, then after 2006 China became the leading emitter of CO2. Though its important to note China's average emissions per capita stayed well below the United States from 1750 to 2021.
+
+In all the United States was one of the biggest contributors of CO2 emissions in the past and still is in the present yet has been surpassed by China in magnitude. Though China's emissions per capita has remained lower than the United States so is not contributing as much CO2 when accounting for population.
+
+These relationships were expected because I had prior knowledge on global emissions Though I did not know exactly when China surpassed the United States in yearly CO2 emissions.
+
+ ***
+  
+
+# **9. References**
+
+1. Dataset compiled (Original source):
+Andrew, Robbie M., and Glen P. Peters. “The Global Carbon Project's Fossil CO2 Emissions Dataset”. Zenodo, October 17, 2022.
+[Original source](https://doi.org/10.5281/zenodo.7215364).
+
+2. Reference for numeric float value conversion to gigatonnes:
+China’s Greenhouse Gas Emissions Exceeded the Developed World for the First Time in 2019.
+[Link](https://rhg.com/research/chinas-emissions-surpass-developed-countries/)
+
+3. Imported Kaggle Dataset:
+Emissions by Country, Quantifying Sources and Emission Levels.
+[Link](https://www.kaggle.com/datasets/thedevastator/global-fossil-co2-emissions-by-country-2002-2022?resource=download)
+
+4. Where the data came from:
+The Global Carbon Project.
+[Link](https://www.globalcarbonproject.org/)
+
+5. Where the image is from:
+ScienceNews, CO2 emissions are on track to take us beyond 1.5 degrees of global warming.
+[Link](https://www.sciencenews.org/article/co2-emissions-global-warming)
+
+ ***
