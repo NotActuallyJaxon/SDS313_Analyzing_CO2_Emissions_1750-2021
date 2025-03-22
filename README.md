@@ -6,4 +6,4 @@ See the RMD for the code structure.
 
 See the CSV for the dataset used.
 
-The WEBP
+The WEBP file is needed for recreating the output
